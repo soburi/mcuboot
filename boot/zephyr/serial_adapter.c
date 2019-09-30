@@ -51,6 +51,8 @@ static u16_t cur;
 static int boot_uart_fifo_getline(char **line);
 static int boot_uart_fifo_init(void);
 
+static struct k_mutex rx_mut;
+
 int
 console_out(int c)
 {
@@ -110,6 +112,7 @@ boot_console_init(void)
 		sys_slist_append(&avail_queue, &line_bufs[i].node);
 	}
 
+	k_mutex_init(&rx_mut);
 	return boot_uart_fifo_init();
 }
 
@@ -126,6 +129,7 @@ boot_uart_fifo_callback(struct device *dev)
 		return;
 	}
 
+	k_mutex_lock(&rx_mut, K_FOREVER);
 	while (true) {
 		rx = uart_fifo_read(uart_dev, &byte, 1);
 		if (rx != 1) {
@@ -139,7 +143,7 @@ boot_uart_fifo_callback(struct device *dev)
 			if (!node) {
 				BOOT_LOG_ERR("Not enough memory to store"
 					     " incoming data!");
-				return;
+				break;
 			}
 			cmd = CONTAINER_OF(node, struct line_input, node);
 		}
@@ -155,6 +159,7 @@ boot_uart_fifo_callback(struct device *dev)
 			cmd = NULL;
 		}
 	}
+	k_mutex_unlock(&rx_mut);
 }
 
 static int
@@ -162,9 +167,8 @@ boot_uart_fifo_getline(char **line)
 {
 	static struct line_input *cmd;
 	sys_snode_t *node;
-	int key;
 
-	key = irq_lock();
+	k_mutex_lock(&rx_mut, K_FOREVER);
 	/* Recycle cmd buffer returned previous time */
 	if (cmd != NULL) {
 		if (sys_slist_peek_tail(&avail_queue) != &cmd->node) {
@@ -173,7 +177,7 @@ boot_uart_fifo_getline(char **line)
 	}
 
 	node = sys_slist_get(&lines_queue);
-	irq_unlock(key);
+	k_mutex_unlock(&rx_mut);
 
 	if (node == NULL) {
 		cmd = NULL;
