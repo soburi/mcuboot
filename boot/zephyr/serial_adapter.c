@@ -19,6 +19,7 @@
 #include <assert.h>
 #include <string.h>
 #include <zephyr.h>
+#include <ring_buffer.h>
 #include "bootutil/bootutil_log.h"
 
 #ifdef CONFIG_UART_CONSOLE
@@ -51,12 +52,20 @@ static u16_t cur;
 static int boot_uart_fifo_getline(char **line);
 static int boot_uart_fifo_init(void);
 
+RING_BUF_DECLARE(tx_buf, 32);
 static struct k_mutex rx_mut;
+static struct k_mutex tx_mut;
 
 int
 console_out(int c)
 {
-	uart_poll_out(uart_dev, c);
+	u8_t c8 = (u8_t)c;
+	k_mutex_lock(&tx_mut, K_FOREVER);
+	int ret = ring_buf_put(&tx_buf, &c8, 1);
+	k_mutex_unlock(&tx_mut);
+	if(ret != 1) {
+	}
+	uart_irq_tx_enable(uart_dev);
 
 	return c;
 }
@@ -113,6 +122,7 @@ boot_console_init(void)
 	}
 
 	k_mutex_init(&rx_mut);
+	k_mutex_init(&tx_mut);
 	return boot_uart_fifo_init();
 }
 
@@ -125,6 +135,18 @@ boot_uart_fifo_callback(struct device *dev)
 
 	uart_irq_update(uart_dev);
 
+	if (uart_irq_tx_ready(uart_dev) ) {
+		if(ring_buf_is_empty(&tx_buf) ) {
+			uart_irq_tx_disable(uart_dev);
+		}
+		else {
+			k_mutex_lock(&tx_mut, K_FOREVER);
+			if(ring_buf_get(&tx_buf, &byte, 1) == 1) {
+				uart_fifo_fill(uart_dev, &byte, 1);
+			}
+			k_mutex_unlock(&tx_mut);
+		}
+	}
 	if (!uart_irq_rx_ready(uart_dev)) {
 		return;
 	}
