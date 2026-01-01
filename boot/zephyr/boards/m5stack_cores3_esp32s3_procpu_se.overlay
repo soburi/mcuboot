@@ -15,3 +15,31 @@
 &ft6336_touch {
 	status = "disabled";
 };
+
+&regulator {
+	status = "disabled";
+};
+
+&charger {
+	status = "disabled";
+};
+
+&fuel_gauge {
+	status = "disabled";
+};
+
+&axp2101_led {
+	status = "disabled";
+};
+
+&bus_5v {
+	status = "disabled";
+};
+
+&bus_out_reg {
+	status = "disabled";
+};
+
+&usb_otg_reg {
+	status = "disabled";
+};
